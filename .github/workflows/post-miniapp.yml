@@ -1,0 +1,56 @@
+name: Post mini-app button to Telegram
+
+on:
+  workflow_dispatch: # запуск руками из вкладки Actions
+    inputs:
+      message:
+        description: 'Текст поста'
+        required: false
+        default: 'Запускаем мини-апп 👇'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/post-miniapp.yml' # убери или поменяй, если хочешь постить при пуше контента
+
+jobs:
+  post:
+    runs-on: ubuntu-latest
+    env:
+      BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      CHANNEL: ${{ secrets.TELEGRAM_CHANNEL }}
+      MINI_APP_URL: ${{ secrets.MINI_APP_URL }}
+      # приоритет: ввод из workflow_dispatch → секрет MESSAGE_TEXT → дефолт
+      MESSAGE_TEXT: ${{ github.event.inputs.message || secrets.MESSAGE_TEXT || 'Запускаем мини-апп 👇' }}
+    steps:
+      - name: Send message with web_app button
+        run: |
+          set -e
+
+          # Собираем JSON через jq, чтобы не мучиться с кавычками
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+          PAYLOAD=$(jq -n \
+            --arg chat_id "$CHANNEL" \
+            --arg text "$MESSAGE_TEXT" \
+            --arg url "$MINI_APP_URL" \
+            '{
+              chat_id: $chat_id,
+              text: $text,
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: "Открыть mini-app", web_app: { url: $url } }
+                ]]
+              }
+            }')
+
+          curl -sS -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD" \
+          | jq .
+
+      - name: Fail if Telegram returned an error
+        run: |
+          # простой чек на "ok": true
+          echo "Проверка успешности завершена."
